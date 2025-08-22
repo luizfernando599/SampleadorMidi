@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MIDI Sampler – Browser</title>
+  <meta name="description" content="Mapeie notas MIDI para tocar seus próprios áudios no navegador. Funciona em HTTPS (GitHub Pages)." />
+  <style>
+    :root {
+      --bg: #0b1020; /* fundo escuro elegante */
+      --panel: #131a2a;
+      --muted: #8ea1b2;
+      --text: #e9eef4;
+      --accent: #4cc9f0;
+      --accent-2: #a3ffb8;
+      --danger: #ff6b6b;
+      --warning: #ffd166;
+      --ring: rgba(76, 201, 240, .35);
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text); background: radial-gradient(1200px 1200px at 110% -10%, #162036, var(--bg));
+    }
+    .container { max-width: 980px; margin: 32px auto; padding: 0 16px 48px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom: 16px; }
+    h1 { font-size: clamp(22px, 4vw, 32px); margin:0; letter-spacing: .3px; }
+    .badge { font-size: 12px; color: var(--bg); background: var(--accent-2); padding: 4px 8px; border-radius: 999px; font-weight: 700; }
+
+    .card { background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)); border: 1px solid rgba(255,255,255,.08); border-radius: var(--radius); padding: 16px; box-shadow: 0 20px 40px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.03); }
+    .row { display:flex; flex-wrap:wrap; gap: 12px; align-items:center; }
+    .row > * { flex: none; }
+    .grow { flex: 1 1 auto; }
+
+    button, select, input[type="number"], input[type="text"], .file { 
+      background: #0f1526; border: 1px solid rgba(255,255,255,.1); color: var(--text); 
+      padding: 10px 12px; border-radius: 12px; font-size: 14px; outline: none;
+    }
+    button { cursor: pointer; font-weight: 700; letter-spacing:.2px; }
+    button.primary { background: linear-gradient(180deg, #1b2a46, #15243e); border-color: rgba(76,201,240,.45); box-shadow: 0 0 0 0 rgba(76,201,240,.35); }
+    button.primary:hover { box-shadow: 0 0 0 4px var(--ring); }
+    button.ghost { background: transparent; border-color: rgba(255,255,255,.15); }
+    button.danger { border-color: rgba(255,107,107,.45); background: linear-gradient(180deg, rgba(255,107,107,.15), rgba(255,107,107,.08)); }
+    button:disabled { opacity:.6; cursor:not-allowed; }
+
+    .status { font-size: 13px; color: var(--muted); }
+    .hint { font-size: 12px; color: var(--muted); }
+
+    .list { margin-top: 16px; display: grid; gap: 10px; }
+    .item { display:grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items:center; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08); }
+    .note { font-weight: 800; letter-spacing:.3px; }
+    .small { font-size: 12px; color: var(--muted); }
+
+    .kbd { border: 1px solid rgba(255,255,255,.2); padding: 1px 6px; border-radius: 6px; background: #0b1120; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px; }
+
+    dialog { width: min(640px, 96%); background: #0b1120; border: 1px solid rgba(255,255,255,.12); color: var(--text); border-radius: 16px; box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+    dialog::backdrop { background: rgba(0,0,0,.55); }
+    .modal-header { display:flex; align-items:center; justify-content:space-between; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.08);}    
+    .modal-body { padding: 16px; display: grid; gap: 12px; }
+    .field { display:grid; gap: 6px; }
+    label { font-size: 13px; color: var(--muted); }
+
+    .footer { display:flex; justify-content:flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid rgba(255,255,255,.08);} 
+
+    .pill { border:1px dashed rgba(255,255,255,.2); background: rgba(255,255,255,.03); padding: 8px 10px; border-radius: 12px; display:inline-flex; align-items:center; gap:8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>MIDI Sampler</h1>
+        <div class="hint">Mapeie <span class="kbd">nota MIDI</span> → <span class="kbd">áudio</span> e toque com seu controlador. Tudo local, sem servidor.</div>
+      </div>
+      <span class="badge">Beta</span>
+    </header>
+
+    <section class="card" id="gate">
+      <div class="row" style="align-items:flex-start">
+        <div class="grow">
+          <div class="status" id="status">Permissão MIDI necessária. Disponível apenas em HTTPS (ex.: GitHub Pages).</div>
+          <div class="hint">Dica: conecte seu controlador MIDI antes e clique em <b>Ativar MIDI</b>. O áudio inicia após a primeira interação do usuário.</div>
+        </div>
+        <div class="row">
+          <button class="primary" id="enableMidiBtn">Ativar MIDI</button>
+          <button class="ghost" id="unlockAudioBtn">Desmutar Áudio</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top: 12px;">
+      <div class="row">
+        <button class="primary" id="addBtn">Adicionar mapeamento</button>
+        <button class="ghost" id="clearAllBtn">Limpar todos</button>
+        <span class="grow"></span>
+        <span class="status" id="insInfo">Nenhuma entrada MIDI detectada.</span>
+      </div>
+      <div class="list" id="mappingList"></div>
+    </section>
+
+    <dialog id="mappingDialog">
+      <form method="dialog" id="mappingForm">
+        <div class="modal-header">
+          <strong>Novo mapeamento</strong>
+          <button class="ghost" value="cancel">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label>Nota MIDI</label>
+            <div class="row">
+              <select id="noteSelect"></select>
+              <button type="button" class="ghost" id="listenBtn">Ouvir nota do controlador</button>
+              <span id="listenBadge" class="pill" style="display:none">Escutando… toque uma tecla</span>
+            </div>
+            <div class="hint">Você pode escolher pela lista ou tocar a nota no seu teclado MIDI.</div>
+          </div>
+          <div class="field">
+            <label>Áudio (upload)</label>
+            <input type="file" id="fileInput" accept="audio/*" />
+            <div class="row">
+              <span id="fileName" class="small">Nenhum arquivo escolhido.</span>
+              <span class="grow"></span>
+              <button type="button" id="testLocalBtn" class="ghost" disabled>▶️ Testar áudio</button>
+            </div>
+            <div class="hint">Formatos comuns: WAV, MP3, OGG, M4A. Arquivos ficam salvos no seu navegador (IndexedDB).</div>
+          </div>
+        </div>
+        <div class="footer">
+          <button value="cancel" class="ghost">Cancelar</button>
+          <button id="saveBtn" class="primary" disabled>Salvar</button>
+        </div>
+      </form>
+    </dialog>
+  </div>
+
+  <script>
+    // ===== Utilidades de nota =====
+    function noteToName(n) {
+      const names = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]; // dó, dó#, ré...
+      const name = names[n % 12];
+      const octave = Math.floor(n / 12) - 1; // padrão MIDI
+      return `${name}${octave} (${n})`;
+    }
+
+    // ===== Áudio =====
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let masterGain = audioCtx.createGain();
+    masterGain.gain.value = 1.0; // volume master
+    masterGain.connect(audioCtx.destination);
+
+    async function resumeAudio() {
+      if (audioCtx.state !== 'running') {
+        try { await audioCtx.resume(); } catch (e) {}
+      }
+    }
+
+    async function playBuffer(audioBuffer) {
+      await resumeAudio();
+      const src = audioCtx.createBufferSource();
+      src.buffer = audioBuffer;
+      src.connect(masterGain);
+      src.start();
+    }
+
+    // ===== IndexedDB simples para samples =====
+    const DB_NAME = 'midi-sampler-db';
+    const DB_STORE = 'samples';
+
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = (e) => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(DB_STORE)) {
+            db.createObjectStore(DB_STORE, { keyPath: 'id' });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function putSample(sample) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).put(sample);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function getSample(id) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readonly');
+        const req = tx.objectStore(DB_STORE).get(id);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function deleteSample(id) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    // ===== Persistência de mapeamentos (localStorage) =====
+    // Estrutura: { [nota:number]: sampleId:string }
+    const MAP_KEY = 'midi-sampler:mappings:v1';
+
+    function loadMappings() {
+      try { return JSON.parse(localStorage.getItem(MAP_KEY)) || {}; }
+      catch { return {}; }
+    }
+    function saveMappings(map) {
+      localStorage.setItem(MAP_KEY, JSON.stringify(map));
+    }
+
+    // ===== Estado =====
+    let midiAccess = null;
+    let inputCount = 0;
+    let listeningForNote = false;
+    let localFileBuffer = null; // buffer no modal
+    let localFileName = '';
+
+    const state = {
+      mappings: loadMappings(), // note -> sampleId
+      decodedBuffers: new Map(), // sampleId -> AudioBuffer (cache)
+    };
+
+    // ===== DOM =====
+    const statusEl = document.getElementById('status');
+    const enableMidiBtn = document.getElementById('enableMidiBtn');
+    const unlockAudioBtn = document.getElementById('unlockAudioBtn');
+    const addBtn = document.getElementById('addBtn');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    const insInfo = document.getElementById('insInfo');
+    const listEl = document.getElementById('mappingList');
+
+    const dlg = document.getElementById('mappingDialog');
+    const noteSelect = document.getElementById('noteSelect');
+    const listenBtn = document.getElementById('listenBtn');
+    const listenBadge = document.getElementById('listenBadge');
+    const fileInput = document.getElementById('fileInput');
+    const fileName = document.getElementById('fileName');
+    const testLocalBtn = document.getElementById('testLocalBtn');
+    const saveBtn = document.getElementById('saveBtn');
+
+    // Preencher lista de notas
+    for (let i = 0; i <= 127; i++) {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = noteToName(i);
+      noteSelect.appendChild(opt);
+    }
+
+    // ===== MIDI =====
+    async function enableMIDI() {
+      if (!('requestMIDIAccess' in navigator)) {
+        statusEl.textContent = 'Este navegador não suporta Web MIDI. Tente Chrome/Edge/Opera em HTTPS.';
+        enableMidiBtn.disabled = true; return;
+      }
+      try {
+        midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+        midiAccess.onstatechange = refreshInputs;
+        refreshInputs();
+        statusEl.textContent = 'MIDI ativado. Selecione/plugue um controlador e toque!';
+      } catch (e) {
+        statusEl.textContent = 'Permissão MIDI negada. Autorize para usar o site.';
+      }
+    }
+
+    function refreshInputs() {
+      inputCount = 0;
+      for (const input of midiAccess.inputs.values()) {
+        input.onmidimessage = onMIDIMessage;
+        inputCount++;
+      }
+      insInfo.textContent = inputCount > 0 ? `${inputCount} entrada(s) MIDI conectada(s).` : 'Nenhuma entrada MIDI detectada.';
+    }
+
+    function onMIDIMessage(e) {
+      const [status, data1, data2] = e.data;
+      const cmd = status & 0xf0;
+      if (cmd === 0x90 && data2 > 0) { // note on
+        const note = data1;
+        // Captura de nota para o modal
+        if (listeningForNote) {
+          noteSelect.value = String(note);
+          toggleListen(false);
+        }
+        // Tocar se houver mapeamento
+        const sampleId = state.mappings[note];
+        if (sampleId) {
+          const buf = state.decodedBuffers.get(sampleId);
+          if (buf) playBuffer(buf);
+          else loadAndCacheSample(sampleId).then(playBuffer).catch(() => {});
+        }
+      }
+    }
+
+    function toggleListen(on) {
+      listeningForNote = on;
+      listenBadge.style.display = on ? 'inline-flex' : 'none';
+      listenBtn.disabled = on;
+    }
+
+    // ===== Carregar buffers existentes no cache =====
+    async function loadAndCacheSample(sampleId) {
+      const rec = await getSample(sampleId);
+      if (!rec) throw new Error('Sample não encontrado');
+      const audioBuffer = await audioCtx.decodeAudioData(rec.data.slice(0));
+      state.decodedBuffers.set(sampleId, audioBuffer);
+      return audioBuffer;
+    }
+
+    async function warmCache() {
+      const ids = Object.values(state.mappings);
+      for (const id of ids) {
+        if (!state.decodedBuffers.has(id)) {
+          try { await loadAndCacheSample(id); } catch {}
+        }
+      }
+    }
+
+    // ===== Renderizar lista =====
+    function renderList() {
+      listEl.innerHTML = '';
+      const entries = Object.entries(state.mappings).sort((a,b)=> Number(a[0]) - Number(b[0]));
+      if (entries.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'hint';
+        empty.textContent = 'Nenhum mapeamento ainda. Clique em “Adicionar mapeamento”.';
+        listEl.appendChild(empty);
+        return;
+      }
+      for (const [note, sampleId] of entries) {
+        const item = document.createElement('div');
+        item.className = 'item';
+
+        const left = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'note';
+        title.textContent = noteToName(Number(note));
+        const small = document.createElement('div');
+        small.className = 'small';
+        small.textContent = `ID: ${sampleId}`;
+        left.appendChild(title); left.appendChild(small);
+
+        const btnTest = document.createElement('button');
+        btnTest.className = 'ghost';
+        btnTest.textContent = '▶️ Testar';
+        btnTest.onclick = async () => {
+          let buf = state.decodedBuffers.get(sampleId);
+          if (!buf) buf = await loadAndCacheSample(sampleId);
+          playBuffer(buf);
+        };
+
+        const btnReplace = document.createElement('button');
+        btnReplace.className = 'ghost';
+        btnReplace.textContent = 'Substituir áudio';
+        btnReplace.onclick = () => openReplaceDialog(Number(note), sampleId);
+
+        const btnDel = document.createElement('button');
+        btnDel.className = 'danger';
+        btnDel.textContent = 'Excluir';
+        btnDel.onclick = async () => {
+          if (confirm('Excluir mapeamento desta nota? (o arquivo permanece salvo)')) {
+            delete state.mappings[note];
+            saveMappings(state.mappings);
+            renderList();
+          }
+        };
+
+        item.appendChild(left);
+        item.appendChild(btnTest);
+        item.appendChild(btnReplace);
+        item.appendChild(btnDel);
+        listEl.appendChild(item);
+      }
+    }
+
+    // ===== Modal: adicionar mapeamento =====
+    function resetModal() {
+      noteSelect.value = '60'; // C4
+      toggleListen(false);
+      fileInput.value = '';
+      fileName.textContent = 'Nenhum arquivo escolhido.';
+      localFileBuffer = null;
+      localFileName = '';
+      testLocalBtn.disabled = true;
+      saveBtn.disabled = true;
+    }
+
+    function openAddDialog() {
+      resetModal();
+      dlg.showModal();
+    }
+
+    function openReplaceDialog(note, currentSampleId) {
+      resetModal();
+      noteSelect.value = String(note);
+      dlg.showModal();
+    }
+
+    listenBtn.addEventListener('click', ()=> toggleListen(true));
+
+    fileInput.addEventListener('change', async (ev) => {
+      const f = ev.target.files?.[0];
+      if (!f) { fileName.textContent = 'Nenhum arquivo escolhido.'; localFileBuffer=null; localFileName=''; saveBtn.disabled=true; testLocalBtn.disabled=true; return; }
+      fileName.textContent = `${f.name} (${Math.round(f.size/1024)} KB)`;
+      try {
+        await resumeAudio();
+        const buf = await f.arrayBuffer();
+        // Tenta decodificar para validar
+        const decoded = await audioCtx.decodeAudioData(buf.slice(0));
+        localFileBuffer = decoded; // guardamos decodificado para teste
+        localFileName = f.name;
+        testLocalBtn.disabled = false;
+        saveBtn.disabled = false;
+      } catch (e) {
+        alert('Não foi possível ler/decodificar este arquivo de áudio.');
+        localFileBuffer = null; localFileName = ''; saveBtn.disabled = true; testLocalBtn.disabled = true;
+      }
+    });
+
+    testLocalBtn.addEventListener('click', ()=> { if (localFileBuffer) playBuffer(localFileBuffer); });
+
+    saveBtn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      if (!localFileBuffer) return;
+      // Re-encode: guardamos o ArrayBuffer original junto com metadados em IndexedDB.
+      // Para isso, precisamos acessar o File novamente; se não disponível, reexportar do buffer
+      // é complexo. Então, ao invés de guardar o original, renderizamos o decoded -> WAV simples.
+      const wavAB = audioBufferToWav(localFileBuffer);
+      const sampleId = `s_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+      await putSample({ id: sampleId, name: localFileName || 'sample.wav', mime: 'audio/wav', data: wavAB });
+      state.decodedBuffers.set(sampleId, localFileBuffer);
+      const note = Number(noteSelect.value);
+      state.mappings[note] = sampleId;
+      saveMappings(state.mappings);
+      dlg.close();
+      renderList();
+    });
+
+    // ===== Exportar AudioBuffer como WAV (PCM 16-bit) =====
+    function audioBufferToWav(buffer) {
+      const numOfChan = buffer.numberOfChannels;
+      const sampleRate = buffer.sampleRate;
+      const length = buffer.length * numOfChan * 2 + 44; // 16-bit
+      const ab = new ArrayBuffer(length);
+      const view = new DataView(ab);
+
+      // Escrever cabeçalho RIFF/WAVE
+      writeString(view, 0, 'RIFF');
+      view.setUint32(4, 36 + buffer.length * numOfChan * 2, true);
+      writeString(view, 8, 'WAVE');
+      writeString(view, 12, 'fmt ');
+      view.setUint32(16, 16, true); // tamanho do subchunk
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, numOfChan, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * numOfChan * 2, true);
+      view.setUint16(32, numOfChan * 2, true); // block align
+      view.setUint16(34, 16, true); // bits por amostra
+      writeString(view, 36, 'data');
+      view.setUint32(40, buffer.length * numOfChan * 2, true);
+
+      // Escrever dados interleaved
+      let offset = 44;
+      const channels = [];
+      for (let i = 0; i < numOfChan; i++) channels.push(buffer.getChannelData(i));
+      for (let i = 0; i < buffer.length; i++) {
+        for (let ch = 0; ch < numOfChan; ch++) {
+          let sample = channels[ch][i];
+          sample = Math.max(-1, Math.min(1, sample));
+          view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+          offset += 2;
+        }
+      }
+      return ab;
+
+      function writeString(dv, offset, str) {
+        for (let i = 0; i < str.length; i++) {
+          dv.setUint8(offset + i, str.charCodeAt(i));
+        }
+      }
+    }
+
+    // ===== Limpar tudo =====
+    clearAllBtn.addEventListener('click', async () => {
+      if (!confirm('Limpar TODOS os mapeamentos? (os arquivos continuam salvos)')) return;
+      state.mappings = {};
+      saveMappings(state.mappings);
+      renderList();
+    });
+
+    // ===== Ações principais =====
+    enableMidiBtn.addEventListener('click', enableMIDI);
+    unlockAudioBtn.addEventListener('click', resumeAudio);
+    addBtn.addEventListener('click', openAddDialog);
+
+    // Fechar captura ao sair do modal
+    dlg.addEventListener('close', () => toggleListen(false));
+
+    // Primeira pintura
+    renderList();
+    warmCache();
+  </script>
+</body>
+</html>
