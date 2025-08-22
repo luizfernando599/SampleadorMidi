@@ -6,7 +6,7 @@
   <title>MIDI Sampler – Browser</title>
   <meta name="description" content="Mapeie notas MIDI para tocar seus próprios áudios no navegador." />
   <style>
-    :root {
+     :root {
       --bg: #0b1020;
       --panel: #131a2a;
       --muted: #8ea1b2;
@@ -63,11 +63,11 @@
     label { font-size: 13px; color: var(--muted); }
     .footer { display:flex; justify-content:flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid rgba(255,255,255,.08);} 
 
-    #panicBtn { position: fixed; bottom: 20px; right: 20px; background: red; color: white; border: none; border-radius: 50%; width: 70px; height: 70px; font-size: 14px; font-weight: bold; cursor: pointer; }
+    #panicBtn { position: fixed; bottom: 20px; right: 20px; background: red; color: white; border: none; border-radius: 50%; width: 70px; height: 70px; font-size
   </style>
 </head>
 <body>
-  <div class="container">
+ <div class="container">
     <header>
       <div>
         <h1>MIDI Sampler</h1>
@@ -139,364 +139,87 @@
   <button id="panicBtn">STOP</button>
 
   <script>
+    // Todo o código JS completo aqui (sem duplicatas de <script>)
+    // Inclui funções utilitárias, áudio, IndexedDB, MIDI e UI.
+
     // =====================
     // Utilidades
     // =====================
-    function noteToName(n) {
-      const names = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
-      const name = names[n % 12];
-      const octave = Math.floor(n / 12) - 1;
-      return `${name}${octave} (${n})`;
-    }
-
-    function uid() {
-      return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
-    }
+    function noteToName(n) { const names=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];return `${names[n%12]}${Math.floor(n/12)-1} (${n})`; }
+    function uid(){return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);}
 
     // =====================
     // Áudio
     // =====================
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const masterGain = audioCtx.createGain();
-    masterGain.connect(audioCtx.destination);
-
-    async function resumeAudio() {
-      try { if (audioCtx.state !== 'running') await audioCtx.resume(); } catch(e){}
-    }
-
-    let activeSources = [];
-    function playBuffer(audioBuffer) {
-      const src = audioCtx.createBufferSource();
-      src.buffer = audioBuffer;
-      src.connect(masterGain);
-      src.start();
-      activeSources.push(src);
-      src.onended = () => { activeSources = activeSources.filter(s => s !== src); };
-    }
-    function stopAllSounds() {
-      activeSources.forEach(s => { try { s.stop(); } catch(e){} });
-      activeSources = [];
-    }
-    document.getElementById('panicBtn').onclick = stopAllSounds;
+    const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const masterGain=audioCtx.createGain();masterGain.connect(audioCtx.destination);
+    async function resumeAudio(){try{if(audioCtx.state!=='running')await audioCtx.resume();}catch(e){}}
+    let activeSources=[];
+    function playBuffer(buf){const src=audioCtx.createBufferSource();src.buffer=buf;src.connect(masterGain);src.start();activeSources.push(src);src.onended=()=>{activeSources=activeSources.filter(s=>s!==src);};}
+    function stopAllSounds(){activeSources.forEach(s=>{try{s.stop();}catch(e){}});activeSources=[];}
+    document.getElementById('panicBtn').onclick=stopAllSounds;
 
     // =====================
-    // Persistência (localStorage + IndexedDB)
+    // Persistência
     // =====================
-    const MAP_KEY = 'midi-sampler:mappings:v2'; // { [note]: { id, name } }
-    const STOP_KEY = 'midi-sampler:stopNote:v1';
-
-    function loadMappings() {
-      try { return JSON.parse(localStorage.getItem(MAP_KEY)) || {}; } catch { return {}; }
-    }
-    function saveMappings(m) { localStorage.setItem(MAP_KEY, JSON.stringify(m)); }
-    function loadStopNote() { const v = localStorage.getItem(STOP_KEY); return v === null ? null : Number(v); }
-    function saveStopNote(n) { if (n === null) localStorage.removeItem(STOP_KEY); else localStorage.setItem(STOP_KEY, String(n)); }
-
-    const state = {
-      mappings: loadMappings(),           // { [note:number]: { id:string, name:string } }
-      decodedBuffers: new Map(),          // id -> AudioBuffer
-      stopNote: loadStopNote(),
-    };
-
-    let db; const DB_NAME='midi-sampler-db', STORE_NAME='samples';
-    function openDB(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DB_NAME,1); r.onupgradeneeded=e=>{ const db=e.target.result; if(!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME,{keyPath:'id'}); }; r.onsuccess=()=>{ db=r.result; res(db); }; r.onerror=()=>rej(r.error); }); }
-    function setSample(id,data){ return new Promise((res,rej)=>{ const tx=db.transaction(STORE_NAME,'readwrite'); tx.objectStore(STORE_NAME).put({id,data}); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
-    function getSample(id){ return new Promise((res,rej)=>{ const tx=db.transaction(STORE_NAME,'readonly'); const rq=tx.objectStore(STORE_NAME).get(id); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); }
-    function deleteSample(id){ return new Promise((res,rej)=>{ const tx=db.transaction(STORE_NAME,'readwrite'); tx.objectStore(STORE_NAME).delete(id); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
-    function clearAllSamples(){ return new Promise((res,rej)=>{ const tx=db.transaction(STORE_NAME,'readwrite'); tx.objectStore(STORE_NAME).clear(); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
-
-    async function loadAndCacheSample(sampleId) {
-      const rec = await getSample(sampleId);
-      if (!rec) throw new Error('Sample não encontrado');
-      const buf = await audioCtx.decodeAudioData(rec.data.slice(0));
-      state.decodedBuffers.set(sampleId, buf);
-      return buf;
-    }
+    const MAP_KEY='midi-sampler:mappings:v2';const STOP_KEY='midi-sampler:stopNote:v1';
+    function loadMappings(){try{return JSON.parse(localStorage.getItem(MAP_KEY))||{};}catch{return {};}}
+    function saveMappings(m){localStorage.setItem(MAP_KEY,JSON.stringify(m));}
+    function loadStopNote(){const v=localStorage.getItem(STOP_KEY);return v===null?null:Number(v);}
+    function saveStopNote(n){if(n===null)localStorage.removeItem(STOP_KEY);else localStorage.setItem(STOP_KEY,String(n));}
+    const state={mappings:loadMappings(),decodedBuffers:new Map(),stopNote:loadStopNote()};
+    let db;const DB_NAME='midi-sampler-db',STORE_NAME='samples';
+    function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains(STORE_NAME))db.createObjectStore(STORE_NAME,{keyPath:'id'});};r.onsuccess=()=>{db=r.result;res(db);};r.onerror=()=>rej(r.error);});}
+    function setSample(id,data){return new Promise((res,rej)=>{const tx=db.transaction(STORE_NAME,'readwrite');tx.objectStore(STORE_NAME).put({id,data});tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);});}
+    function getSample(id){return new Promise((res,rej)=>{const tx=db.transaction(STORE_NAME,'readonly');const rq=tx.objectStore(STORE_NAME).get(id);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);});}
+    function deleteSample(id){return new Promise((res,rej)=>{const tx=db.transaction(STORE_NAME,'readwrite');tx.objectStore(STORE_NAME).delete(id);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);});}
+    function clearAllSamples(){return new Promise((res,rej)=>{const tx=db.transaction(STORE_NAME,'readwrite');tx.objectStore(STORE_NAME).clear();tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);});}
+    async function loadAndCacheSample(id){const rec=await getSample(id);if(!rec)throw new Error('Sample não encontrado');const buf=await audioCtx.decodeAudioData(rec.data.slice(0));state.decodedBuffers.set(id,buf);return buf;}
 
     // =====================
     // UI refs
     // =====================
-    const statusEl = document.getElementById('status');
-    const enableMidiBtn = document.getElementById('enableMidiBtn');
-    const unlockAudioBtn = document.getElementById('unlockAudioBtn');
-    const addBtn = document.getElementById('addBtn');
-    const clearAllBtn = document.getElementById('clearAllBtn');
-    const setStopBtn = document.getElementById('setStopBtn');
-    const insInfo = document.getElementById('insInfo');
-    const listEl = document.getElementById('mappingList');
-    const stopNoteDisplay = document.getElementById('stopNoteDisplay');
-
-    const dlg = document.getElementById('mappingDialog');
-    const noteSelect = document.getElementById('noteSelect');
-    const listenBtn = document.getElementById('listenBtn');
-    const listenBadge = document.getElementById('listenBadge');
-    const fileInput = document.getElementById('fileInput');
-    const fileName = document.getElementById('fileName');
-    const testLocalBtn = document.getElementById('testLocalBtn');
-    const saveBtn = document.getElementById('saveBtn');
-
-    // Popular notas 0..127
-    for (let i = 0; i <= 127; i++) {
-      const opt = document.createElement('option');
-      opt.value = i;
-      opt.textContent = noteToName(i);
-      noteSelect.appendChild(opt);
-    }
+    const statusEl=document.getElementById('status');const enableMidiBtn=document.getElementById('enableMidiBtn');const unlockAudioBtn=document.getElementById('unlockAudioBtn');const addBtn=document.getElementById('addBtn');const clearAllBtn=document.getElementById('clearAllBtn');const setStopBtn=document.getElementById('setStopBtn');const insInfo=document.getElementById('insInfo');const listEl=document.getElementById('mappingList');const stopNoteDisplay=document.getElementById('stopNoteDisplay');
+    const dlg=document.getElementById('mappingDialog');const noteSelect=document.getElementById('noteSelect');const listenBtn=document.getElementById('listenBtn');const listenBadge=document.getElementById('listenBadge');const fileInput=document.getElementById('fileInput');const fileName=document.getElementById('fileName');const testLocalBtn=document.getElementById('testLocalBtn');const saveBtn=document.getElementById('saveBtn');
+    for(let i=0;i<=127;i++){const o=document.createElement('option');o.value=i;o.textContent=noteToName(i);noteSelect.appendChild(o);}
 
     // =====================
     // MIDI
     // =====================
-    let midiAccess = null;
-    let inputCount = 0;
-    let listeningForNote = false;
-    let waitingForStopNote = false;
-
-    async function enableMIDI() {
-      if (!('requestMIDIAccess' in navigator)) {
-        statusEl.textContent = 'Este navegador não suporta Web MIDI.';
-        enableMidiBtn.disabled = true;
-        return;
-      }
-      try {
-        midiAccess = await navigator.requestMIDIAccess({ sysex:false });
-        midiAccess.onstatechange = refreshInputs;
-        refreshInputs();
-        statusEl.textContent = 'MIDI ativado!';
-      } catch (e) {
-        statusEl.textContent = 'Permissão MIDI negada.';
-      }
-    }
-
-    function refreshInputs() {
-      inputCount = 0;
-      for (const input of midiAccess.inputs.values()) {
-        input.onmidimessage = onMIDIMessage;
-        inputCount++;
-      }
-      insInfo.textContent = inputCount > 0 ? `${inputCount} entrada(s) MIDI conectada(s).` : 'Nenhuma entrada MIDI.';
-    }
-
-    function onMIDIMessage(e) {
-      const [status, note, velocity] = e.data;
-      const cmd = status & 0xf0;
-
-      if (cmd === 0x90 && velocity > 0) { // Note On
-        // Configurar STOP
-        if (waitingForStopNote) {
-          state.stopNote = note;
-          saveStopNote(note);
-          waitingForStopNote = false;
-          updateStopDisplay();
-          return;
-        }
-        // Acionar STOP
-        if (state.stopNote !== null && note === state.stopNote) {
-          stopAllSounds();
-          return;
-        }
-        // Capturar nota para o diálogo
-        if (listeningForNote) {
-          noteSelect.value = String(note);
-          toggleListen(false);
-        }
-        // Tocar sample mapeado
-        const m = state.mappings[note];
-        const sampleId = m && (m.id || m); // compat v1
-        if (sampleId) {
-          const buf = state.decodedBuffers.get(sampleId);
-          if (buf) { playBuffer(buf); }
-          else { loadAndCacheSample(sampleId).then(playBuffer).catch(()=>{}); }
-        }
-      }
-    }
+    let midiAccess=null,inputCount=0,listeningForNote=false,waitingForStopNote=false;
+    async function enableMIDI(){if(!('requestMIDIAccess'in navigator)){statusEl.textContent='Este navegador não suporta Web MIDI.';enableMidiBtn.disabled=true;return;}try{midiAccess=await navigator.requestMIDIAccess({sysex:false});midiAccess.onstatechange=refreshInputs;refreshInputs();statusEl.textContent='MIDI ativado!';}catch(e){statusEl.textContent='Permissão MIDI negada.';}}
+    function refreshInputs(){inputCount=0;for(const input of midiAccess.inputs.values()){input.onmidimessage=onMIDIMessage;inputCount++;}insInfo.textContent=inputCount>0?`${inputCount} entrada(s) MIDI conectada(s).`:'Nenhuma entrada MIDI.';}
+    function onMIDIMessage(e){const [status,note,vel]=e.data;const cmd=status&0xf0;if(cmd===0x90&&vel>0){if(waitingForStopNote){state.stopNote=note;saveStopNote(note);waitingForStopNote=false;updateStopDisplay();return;}if(state.stopNote!==null&&note===state.stopNote){stopAllSounds();return;}if(listeningForNote){noteSelect.value=String(note);toggleListen(false);return;}const m=state.mappings[note];const id=m&&(m.id||m);if(id){const buf=state.decodedBuffers.get(id);if(buf)playBuffer(buf);else loadAndCacheSample(id).then(playBuffer).catch(()=>{});}}}
 
     // =====================
     // UI actions
     // =====================
-    enableMidiBtn.onclick = async () => { await resumeAudio(); enableMIDI(); };
-    unlockAudioBtn.onclick = resumeAudio;
-
-    addBtn.onclick = () => {
-      selectedFileData = null;
-      selectedFileName = '';
-      fileInput.value = '';
-      fileName.textContent = 'Nenhum arquivo escolhido.';
-      saveBtn.disabled = true;
-      testLocalBtn.disabled = true;
-      noteSelect.value = '60';
-      dlg.showModal();
-    };
-
-    clearAllBtn.onclick = async () => {
-      if (!confirm('Apagar todos os mapeamentos e áudios?')) return;
-      state.mappings = {};
-      saveMappings(state.mappings);
-      state.decodedBuffers.clear();
-      try { await clearAllSamples(); } catch(e){}
-      renderList();
-    };
-
-    setStopBtn.onclick = () => {
-      waitingForStopNote = true;
-      stopNoteDisplay.textContent = 'Toque a nota/botão no seu controlador para configurar como STOP.';
-    };
-
-    listenBtn.onclick = () => toggleListen(true);
-
-    function toggleListen(on) {
-      listeningForNote = on;
-      listenBadge.style.display = on ? 'inline-block' : 'none';
-      listenBtn.disabled = on;
-    }
-
-    function updateStopDisplay() {
-      if (state.stopNote === null) {
-        stopNoteDisplay.textContent = '';
-      } else {
-        stopNoteDisplay.textContent = `Nota de parada: ${noteToName(state.stopNote)}`;
-      }
-      renderList();
-    }
+    enableMidiBtn.onclick=async()=>{await resumeAudio();enableMIDI();};unlockAudioBtn.onclick=resumeAudio;
+    addBtn.onclick=()=>{selectedFileData=null;selectedFileName='';fileInput.value='';fileName.textContent='Nenhum arquivo escolhido.';saveBtn.disabled=true;testLocalBtn.disabled=true;noteSelect.value='60';dlg.showModal();};
+    clearAllBtn.onclick=async()=>{if(!confirm('Apagar todos os mapeamentos e áudios?'))return;state.mappings={};saveMappings(state.mappings);state.decodedBuffers.clear();try{await clearAllSamples();}catch(e){}renderList();};
+    setStopBtn.onclick=()=>{waitingForStopNote=true;stopNoteDisplay.textContent='Toque a nota/botão para configurar como STOP…';};
+    listenBtn.onclick=()=>toggleListen(true);
+    function toggleListen(on){listeningForNote=on;listenBadge.style.display=on?'inline-block':'none';listenBtn.disabled=on;}
+    function updateStopDisplay(){stopNoteDisplay.textContent=state.stopNote===null?'':`Nota de parada: ${noteToName(state.stopNote)}`;renderList();}
 
     // =====================
     // Upload / salvar mapeamento
     // =====================
-    let selectedFileData = null;
-    let selectedFileName = '';
-
-    fileInput.onchange = () => {
-      const f = fileInput.files[0];
-      if (!f) return;
-      selectedFileName = f.name;
-      fileName.textContent = f.name;
-      saveBtn.disabled = false;
-      testLocalBtn.disabled = false;
-      const reader = new FileReader();
-      reader.onload = () => { selectedFileData = reader.result; };
-      reader.readAsArrayBuffer(f);
-    };
-
-    testLocalBtn.onclick = async () => {
-      if (!selectedFileData) return;
-      await resumeAudio();
-      const buf = await audioCtx.decodeAudioData(selectedFileData.slice(0));
-      playBuffer(buf);
-    };
-
-    saveBtn.onclick = async (e) => {
-      e.preventDefault();
-      const note = Number(noteSelect.value);
-      if (!selectedFileData) return;
-      const id = uid();
-      await setSample(id, selectedFileData);
-      state.mappings[note] = { id, name: selectedFileName || id };
-      saveMappings(state.mappings);
-      try {
-        const buf = await audioCtx.decodeAudioData(selectedFileData.slice(0));
-        state.decodedBuffers.set(id, buf);
-      } catch(e){}
-      dlg.close();
-      renderList();
-    };
+    let selectedFileData=null,selectedFileName='';
+    fileInput.onchange=()=>{const f=fileInput.files[0];if(!f)return;selectedFileName=f.name;fileName.textContent=f.name;saveBtn.disabled=false;testLocalBtn.disabled=false;const r=new FileReader();r.onload=()=>{selectedFileData=r.result;};r.readAsArrayBuffer(f);};
+    testLocalBtn.onclick=async()=>{if(!selectedFileData)return;await resumeAudio();const buf=await audioCtx.decodeAudioData(selectedFileData.slice(0));playBuffer(buf);};
+    saveBtn.onclick=async e=>{e.preventDefault();const note=Number(noteSelect.value);if(!selectedFileData)return;const id=uid();await setSample(id,selectedFileData);state.mappings[note]={id,name:selectedFileName||id};saveMappings(state.mappings);try{const buf=await audioCtx.decodeAudioData(selectedFileData.slice(0));state.decodedBuffers.set(id,buf);}catch(e){}dlg.close();renderList();};
 
     // =====================
     // Renderização da lista
     // =====================
-    function renderList() {
-      listEl.innerHTML = '';
-      const entries = Object.entries(state.mappings).sort((a,b)=> Number(a[0]) - Number(b[0]));
-      if (entries.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'hint';
-        empty.textContent = 'Nenhum mapeamento ainda. Clique em “Adicionar mapeamento”.';
-        listEl.appendChild(empty);
-        return;
-      }
-      for (const [noteStr, info] of entries) {
-        const note = Number(noteStr);
-        const item = document.createElement('div');
-        item.className = 'item';
-
-        const left = document.createElement('div');
-        const title = document.createElement('div');
-        title.className = 'note';
-        title.textContent = noteToName(note);
-        if (state.stopNote !== null && note === state.stopNote) {
-          const badge = document.createElement('span');
-          badge.className = 'stop-badge';
-          badge.textContent = 'STOP';
-          title.appendChild(badge);
-        }
-        const small = document.createElement('div');
-        small.className = 'small';
-        const sampleId = info && (info.id || info); // compat v1
-        const sampleName = info && info.name ? info.name : `ID: ${sampleId}`;
-        small.textContent = sampleName;
-        left.appendChild(title);
-        left.appendChild(small);
-
-        const testBtn = document.createElement('button');
-        testBtn.className = 'ghost';
-        testBtn.textContent = '▶️';
-        testBtn.title = 'Testar';
-        testBtn.onclick = async () => {
-          await resumeAudio();
-          const buf = state.decodedBuffers.get(sampleId) || await loadAndCacheSample(sampleId);
-          playBuffer(buf);
-        };
-
-        const changeBtn = document.createElement('button');
-        changeBtn.className = 'ghost';
-        changeBtn.textContent = 'Trocar áudio';
-        changeBtn.onclick = () => {
-          // Abre o diálogo com a nota já escolhida para trocar apenas o sample
-          noteSelect.value = String(note);
-          selectedFileData = null;
-          selectedFileName = '';
-          fileInput.value = '';
-          fileName.textContent = 'Nenhum arquivo escolhido.';
-          saveBtn.disabled = true;
-          testLocalBtn.disabled = true;
-          dlg.showModal();
-        };
-
-        const removeBtn = document.createElement('button');
-        removeBtn.className = 'danger';
-        removeBtn.textContent = 'Remover';
-        removeBtn.onclick = async () => {
-          if (!confirm('Remover este mapeamento?')) return;
-          delete state.mappings[note];
-          saveMappings(state.mappings);
-          // Opcional: remover o sample do banco (apenas se nenhum outro mapeamento usa o mesmo id)
-          const stillUsed = Object.values(state.mappings).some(v => (v.id||v) === sampleId);
-          if (!stillUsed) {
-            try { await deleteSample(sampleId); } catch(e){}
-            state.decodedBuffers.delete(sampleId);
-          }
-          renderList();
-        };
-
-        item.appendChild(left);
-        item.appendChild(testBtn);
-        item.appendChild(changeBtn);
-        item.appendChild(removeBtn);
-        listEl.appendChild(item);
-      }
-    }
+    function renderList(){listEl.innerHTML='';const entries=Object.entries(state.mappings).sort((a,b)=>Number(a[0])-Number(b[0]));if(entries.length===0){const empty=document.createElement('div');empty.className='hint';empty.textContent='Nenhum mapeamento ainda.';listEl.appendChild(empty);return;}for(const [noteStr,info]of entries){const note=Number(noteStr);const item=document.createElement('div');item.className='item';const left=document.createElement('div');const title=document.createElement('div');title.className='note';title.textContent=noteToName(note);if(state.stopNote!==null&&note===state.stopNote){const b=document.createElement('span');b.className='stop-badge';b.textContent='STOP';title.appendChild(b);}const small=document.createElement('div');small.className='small';const id=info&&(info.id||info);const sampleName=info&&info.name?info.name:`ID: ${id}`;small.textContent=sampleName;left.appendChild(title);left.appendChild(small);const testBtn=document.createElement('button');testBtn.className='ghost';testBtn.textContent='▶️';testBtn.onclick=async()=>{await resumeAudio();const buf=state.decodedBuffers.get(id)||await loadAndCacheSample(id);playBuffer(buf);};const changeBtn=document.createElement('button');changeBtn.className='ghost';changeBtn.textContent='Trocar';changeBtn.onclick=()=>{noteSelect.value=String(note);selectedFileData=null;selectedFileName='';fileInput.value='';fileName.textContent='Nenhum arquivo escolhido.';saveBtn.disabled=true;testLocalBtn.disabled=true;dlg.showModal();};const removeBtn=document.createElement('button');removeBtn.className='danger';removeBtn.textContent='Remover';removeBtn.onclick=async()=>{if(!confirm('Remover este mapeamento?'))return;delete state.mappings[note];saveMappings(state.mappings);const stillUsed=Object.values(state.mappings).some(v=>(v.id||v)===id);if(!stillUsed){try{await deleteSample(id);}catch(e){}state.decodedBuffers.delete(id);}renderList();};item.appendChild(left);item.appendChild(testBtn);item.appendChild(changeBtn);item.appendChild(removeBtn);listEl.appendChild(item);}}
 
     // =====================
     // Inicialização
     // =====================
-    function warmCache() {
-      const ids = new Set(Object.values(state.mappings).map(v => (v.id || v)));
-      ids.forEach(id => { if (!state.decodedBuffers.has(id)) loadAndCacheSample(id).catch(()=>{}); });
-    }
-
-    openDB().then(() => {
-      updateStopDisplay();
-      renderList();
-      warmCache();
-    });
+    function warmCache(){const ids=new Set(Object.values(state.mappings).map(v=>(v.id||v)));ids.forEach(id=>{if(!state.decodedBuffers.has(id))loadAndCacheSample(id).catch(()=>{});});}
+    openDB().then(()=>{updateStopDisplay();renderList();warmCache();});
   </script>
 </body>
 </html>
